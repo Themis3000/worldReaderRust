@@ -26,21 +26,20 @@ pub fn read_mca<F: Read + Seek>(file: &mut F) -> Vec<NbtTag> {
         if compression_type != 2 {
             panic!("Unsupported compression type found");
         }
-        let chunk_raw = read_data_cursor(file, ((location.sector_count as usize) * 4096) - 1);
+        let chunk_raw = read_data_cursor(file, (length - 1) as usize);
         let mut decompressor = ZlibDecoder::new(chunk_raw);
-        let mut chunk_decompressed = read_data_cursor(&mut decompressor, length as usize);
-        let nbt = read_nbt(&mut chunk_decompressed);
+        let nbt = read_nbt(&mut decompressor);
         out.push(nbt);
-        break;
+        //break
     }
     return out;
 }
 
-fn read_nbt<F: Read + Seek>(file: &mut F) -> NbtTag {
+fn read_nbt<F: Read>(file: &mut F) -> NbtTag {
     return decode_tags(file, true, -1);
 }
 
-fn decode_tags<F: Read + Seek>(file: &mut F, has_name: bool, _tag_type: i8) -> NbtTag {
+fn decode_tags<F: Read>(file: &mut F, has_name: bool, _tag_type: i8) -> NbtTag {
     // Read and set tag type if it is not defined
     let mut tag_type: i8;
     if _tag_type == -1 {
@@ -62,8 +61,6 @@ fn decode_tags<F: Read + Seek>(file: &mut F, has_name: bool, _tag_type: i8) -> N
         name = Some(name_value);
     }
 
-    println!("tagtype: {}", tag_type);
-
     let tag_out: NbtTypes = match tag_type {
         //1 => NbtTag {name: Some(NbtTypes::Byte(file.read_i8())), data}
         1 => NbtTypes::Byte(file.read_i8().unwrap()),
@@ -82,7 +79,6 @@ fn decode_tags<F: Read + Seek>(file: &mut F, has_name: bool, _tag_type: i8) -> N
             let length = file.read_u16::<BigEndian>().unwrap();
             let data = read_data(file, length as usize);
             let out = String::from_utf8(data).unwrap();
-            println!("string: {}", out);
             NbtTypes::String(out)
         },
         9 => {
@@ -127,14 +123,11 @@ fn decode_tags<F: Read + Seek>(file: &mut F, has_name: bool, _tag_type: i8) -> N
         },
         _ => panic!("Invalid tag type found. Fed data was not of the correct format."),
     };
-
-    //println!("{:?}", tag_out);
     return NbtTag {name, data: Some(tag_out)};
 }
 
 fn read_data(file: &mut impl Read, len: usize) -> Vec<u8> {
     let mut buffer: Vec<u8> = vec![0; len];
-    println!("Read length: {:?}", len);
     file.read_exact(&mut buffer).unwrap();
     return buffer;
 }

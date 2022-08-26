@@ -1,6 +1,7 @@
 mod mca_reader;
 use std::env::{args, Args};
 use std::io::Cursor;
+use std::time::Instant;
 
 fn main() {
     let mut args: Args = args();
@@ -9,7 +10,11 @@ fn main() {
     let file_bytes = std::fs::read(file_path).unwrap();
     let mut cursor = Cursor::new(file_bytes);
 
+    let now = Instant::now();
+
     let data = mca_reader::read_mca(&mut cursor);
 
-    println!("{:?}", data);
+    let elapsed = now.elapsed();
+    println!("{:?}", data[0]);
+    println!("Time taken: {:?}", elapsed);
 }
