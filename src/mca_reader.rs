@@ -3,7 +3,7 @@ use std::io::{Cursor, Read, Seek, SeekFrom};
 use byteorder::{BigEndian, ReadBytesExt};
 use flate2::bufread::ZlibDecoder;
 
-pub fn read_mca<F: Read + Seek>(file: &mut F) {
+pub fn read_mca<F: Read + Seek>(file: &mut F) -> Vec<NbtTag> {
     let mut locations: Vec<Location> = Vec::new();
     for _ in 0..1024 {
         let mut location_offset_raw: Vec<u8> = read_data(file, 3);
@@ -15,6 +15,7 @@ pub fn read_mca<F: Read + Seek>(file: &mut F) {
         locations.push(Location {offset: location_offset, sector_count: location_sector_count});
     }
 
+    let mut out: Vec<NbtTag> = Vec::new();
     for location in locations.iter() {
         if location.offset == 0 && location.sector_count == 0 {
             continue;
@@ -28,12 +29,15 @@ pub fn read_mca<F: Read + Seek>(file: &mut F) {
         let chunk_raw = read_data_cursor(file, ((location.sector_count as usize) * 4096) - 1);
         let mut decompressor = ZlibDecoder::new(chunk_raw);
         let mut chunk_decompressed = read_data_cursor(&mut decompressor, length as usize);
-        read_nbt(&mut chunk_decompressed);
+        let nbt = read_nbt(&mut chunk_decompressed);
+        out.push(nbt);
+        break;
     }
+    return out;
 }
 
-fn read_nbt<F: Read + Seek>(file: &mut F) {
-    decode_tags(file, true, -1);
+fn read_nbt<F: Read + Seek>(file: &mut F) -> NbtTag {
+    return decode_tags(file, true, -1);
 }
 
 fn decode_tags<F: Read + Seek>(file: &mut F, has_name: bool, _tag_type: i8) -> NbtTag {
@@ -58,7 +62,9 @@ fn decode_tags<F: Read + Seek>(file: &mut F, has_name: bool, _tag_type: i8) -> N
         name = Some(name_value);
     }
 
-    let data: NbtTypes = match tag_type {
+    println!("tagtype: {}", tag_type);
+
+    let tag_out: NbtTypes = match tag_type {
         //1 => NbtTag {name: Some(NbtTypes::Byte(file.read_i8())), data}
         1 => NbtTypes::Byte(file.read_i8().unwrap()),
         2 => NbtTypes::Short(file.read_i16::<BigEndian>().unwrap()),
@@ -76,20 +82,59 @@ fn decode_tags<F: Read + Seek>(file: &mut F, has_name: bool, _tag_type: i8) -> N
             let length = file.read_u16::<BigEndian>().unwrap();
             let data = read_data(file, length as usize);
             let out = String::from_utf8(data).unwrap();
+            println!("string: {}", out);
             NbtTypes::String(out)
         },
-        //9 => {
-        //    let tag_id = file.read_i8().unwrap();
-        //    let size = file.read_i32::<BigEndian>().unwrap();
-        //}
+        9 => {
+            let tag_id = file.read_i8().unwrap();
+            let size = file.read_i32::<BigEndian>().unwrap();
+            let mut out: Vec<NbtTypes> = Vec::new();
+            for _ in 0..size {
+                let tag = decode_tags(file, false, tag_id);
+                let data = tag.data.unwrap();
+                out.push(data);
+            }
+            NbtTypes::List(out)
+        },
+        10 => {
+            let mut out: HashMap<String, NbtTypes> = HashMap::new();
+            loop {
+                let tag = decode_tags(file, true, -1);
+                if tag.data.is_none() && tag.name.is_none() {
+                    break;
+                }
+                out.insert(tag.name.unwrap(), tag.data.unwrap());
+            }
+            NbtTypes::Compound(out)
+        },
+        11 => {
+            let size = file.read_i32::<BigEndian>().unwrap();
+            let mut out: Vec<i32> = Vec::new();
+            for _ in 0..size {
+                let data = file.read_i32::<BigEndian>().unwrap();
+                out.push(data);
+            }
+            NbtTypes::IntArray(out)
+        },
+        12 => {
+            let size = file.read_i32::<BigEndian>().unwrap();
+            let mut out: Vec<i64> = Vec::new();
+            for _ in 0..size {
+                let data = file.read_i64::<BigEndian>().unwrap();
+                out.push(data);
+            }
+            NbtTypes::LongArray(out)
+        },
         _ => panic!("Invalid tag type found. Fed data was not of the correct format."),
     };
 
-    //return NbtTag {name: name, data: Some(tag)};
+    //println!("{:?}", tag_out);
+    return NbtTag {name, data: Some(tag_out)};
 }
 
 fn read_data(file: &mut impl Read, len: usize) -> Vec<u8> {
     let mut buffer: Vec<u8> = vec![0; len];
+    println!("Read length: {:?}", len);
     file.read_exact(&mut buffer).unwrap();
     return buffer;
 }
@@ -126,6 +171,7 @@ struct Chunk {
     nbt_data: HashMap<String, NbtTypes>,
 }
 
+#[derive(Debug)]
 enum NbtTypes {
     Byte(i8),
     Short(i16),
@@ -139,10 +185,10 @@ enum NbtTypes {
     ByteArray(Vec<i8>),
     IntArray(Vec<i32>),
     LongArray(Vec<i64>),
-    Boolean(bool),
 }
 
-struct NbtTag {
+#[derive(Debug)]
+pub struct NbtTag {
     name: Option<String>,
     data: Option<NbtTypes>,
 }

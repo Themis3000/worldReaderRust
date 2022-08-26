@@ -9,7 +9,7 @@ fn main() {
     let file_bytes = std::fs::read(file_path).unwrap();
     let mut cursor = Cursor::new(file_bytes);
 
-    mca_reader::read_mca(&mut cursor);
+    let data = mca_reader::read_mca(&mut cursor);
 
-    //println!("{:?}", file_bytes);
+    println!("{:?}", data);
 }
