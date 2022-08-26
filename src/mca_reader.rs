@@ -30,7 +30,6 @@ pub fn read_mca<F: Read + Seek>(file: &mut F) -> Vec<NbtTag> {
         let mut decompressor = ZlibDecoder::new(chunk_raw);
         let nbt = read_nbt(&mut decompressor);
         out.push(nbt);
-        //break
     }
     return out;
 }
